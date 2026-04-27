@@ -1,0 +1,729 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="messages"></div>
+
+<div class="row">
+    <!-- 病患資料設定 -->
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="fas fa-user"></i> 病患資料設定
+            </div>
+            <div class="card-body">
+                <form id="patientForm">
+                    <div class="mb-3">
+                        <label for="idNumber" class="form-label">身分證字號</label>
+                        <input type="text" class="form-control" id="idNumber"
+                            value="{{ config.patient_info.id_number }}" placeholder="請輸入身分證字號" required>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4">
+                            <label for="birthYear" class="form-label">出生年份 (民國)</label>
+                            <input type="text" class="form-control" id="birthYear"
+                                value="{{ config.patient_info.birth_year }}" placeholder="例: 76" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="birthMonth" class="form-label">出生月份</label>
+                            <select class="form-select" id="birthMonth" required>
+                                {% for i in range(1, 13) %}
+                                <option value="{{ '%02d'|format(i) }}" {% if config.patient_info.birth_month=='%02d'
+                                    |format(i) %}selected{% endif %}>
+                                    {{ i }}月
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="birthDay" class="form-label">出生日期</label>
+                            <select class="form-select" id="birthDay" required>
+                                {% for i in range(1, 32) %}
+                                <option value="{{ '%02d'|format(i) }}" {% if config.patient_info.birth_day=='%02d'
+                                    |format(i) %}selected{% endif %}>
+                                    {{ i }}日
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="fas fa-robot"></i>
+                        <strong>自動驗證碼處理:</strong> 系統已內建 2captcha 服務，可自動處理 reCAPTCHA 驗證碼
+                    </div>
+
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> 儲存病患資料
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 醫師資訊 -->
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="fas fa-user-md"></i> 醫師資訊
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <strong>科別:</strong><br>
+                        <span class="text-primary">{{ config.doctor_info.section_name }}</span>
+                    </div>
+                    <div class="col-6">
+                        <strong>醫師:</strong><br>
+                        <span class="text-primary">{{ config.doctor_info.doctor_name }}</span>
+                    </div>
+                </div>
+                <hr>
+                <div>
+                    <strong>門診時間:</strong><br>
+                    <span class="badge bg-info me-1">星期二上午</span>
+                    <span class="badge bg-info me-1">星期三上午</span>
+                    <span class="badge bg-info">星期五上午</span>
+                </div>
+                <hr>
+                <div>
+                    <strong>部署模式:</strong><br>
+                    <span class="badge bg-success" id="deploymentMode">本地模式</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 立即掛號 -->
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="fas fa-calendar-plus"></i> 立即掛號
+            </div>
+            <div class="card-body">
+                <p class="text-muted">選擇特定日期進行掛號</p>
+                <form id="immediateForm">
+                    <div class="mb-3">
+                        <label for="targetDate" class="form-label">掛號日期</label>
+                        <input type="date" class="form-control" id="targetDate" required>
+                    </div>
+                    <button type="submit" class="btn btn-success" id="immediateBtn">
+                        <i class="fas fa-play"></i> 立即掛號
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 自動掛號設定 -->
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="fas fa-robot"></i> 自動掛號設定
+            </div>
+            <div class="card-body">
+                <p class="text-muted">設定自動掛號的星期和範圍</p>
+                <form id="autoForm">
+                    <div class="mb-3">
+                        <label class="form-label">目標星期 (可複選)</label>
+                        <div class="row">
+                            <div class="col-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" value="2" id="tue" {% if 2 in
+                                        config.schedule.target_weekdays %}checked{% endif %}>
+                                    <label class="form-check-label" for="tue">星期二</label>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" value="3" id="wed" {% if 3 in
+                                        config.schedule.target_weekdays %}checked{% endif %}>
+                                    <label class="form-check-label" for="wed">星期三</label>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" value="5" id="fri" {% if 5 in
+                                        config.schedule.target_weekdays %}checked{% endif %}>
+                                    <label class="form-check-label" for="fri">星期五</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label for="startDate" class="form-label">開始日期</label>
+                            <input type="date" class="form-control" id="startDate"
+                                value="{{ config.schedule.start_date or '' }}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="endDate" class="form-label">結束日期</label>
+                            <input type="date" class="form-control" id="endDate"
+                                value="{{ config.schedule.end_date or '' }}" required>
+                        </div>
+                    </div>
+                    <div class="form-text mt-2">
+                        <i class="fas fa-info-circle"></i> 選擇掛號的日期範圍，系統會在此範圍內尋找符合星期條件的門診
+                    </div>
+
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-success" id="saveScheduleSettings">
+                            <i class="fas fa-save"></i> 儲存排程設定
+                        </button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-magic"></i> 開始自動掛號
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 排程管理 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="fas fa-clock"></i> 排程管理
+            </div>
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="scheduleEnabled" {% if
+                                config.schedule.enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="scheduleEnabled">
+                                啟動排程功能
+                            </label>
+                        </div>
+                        <small class="text-muted">
+                            每日 {{ config.schedule.check_time }} 自動執行掛號
+                        </small>
+                    </div>
+                    <div class="col-md-3">
+                        <input type="time" class="form-control" id="checkTime" value="{{ config.schedule.check_time }}">
+                    </div>
+                    <div class="col-md-3">
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-success" id="startSchedule">
+                                <i class="fas fa-clock"></i> 開始監控時間
+                            </button>
+                            <button type="button" class="btn btn-danger" id="stopSchedule">
+                                <i class="fas fa-stop"></i> 停止
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-3">
+                    <div class="alert alert-info" id="scheduleStatus">
+                        <i class="fas fa-info-circle" id="statusIcon"></i>
+                        <strong>排程狀態:</strong> <span id="statusText">載入中...</span>
+                        <small class="d-block mt-1" id="statusDetail">正在檢查排程狀態...</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 執行狀態 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4" id="executionStatusCard" style="display: none;">
+            <div class="card-header">
+                <i class="fas fa-tasks"></i> 執行狀態
+                <button type="button" class="btn btn-sm btn-outline-light float-end" onclick="clearExecutionStatus()">
+                    <i class="fas fa-times"></i> 清除
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <h6 id="executionTitle">掛號執行中...</h6>
+                        <div class="progress mb-3">
+                            <div id="executionProgressBar"
+                                class="progress-bar bg-success progress-bar-striped progress-bar-animated"
+                                role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0"
+                                aria-valuemax="100">
+                                <span id="executionProgressText">0%</span>
+                            </div>
+                        </div>
+                        <div id="executionMessage" class="text-muted">準備中...</div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-dark">
+                            <div class="card-header py-2">
+                                <small><i class="fas fa-list"></i> 執行日誌</small>
+                            </div>
+                            <div class="card-body p-2">
+                                <div id="executionLogs" class="small"
+                                    style="max-height: 200px; overflow-y: auto; font-family: monospace;">
+                                    <div class="text-muted">等待開始...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 使用說明 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-question-circle"></i> 使用說明
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-user"></i> 病患資料設定</h6>
+                        <ul class="small">
+                            <li>請填寫正確的身分證字號和出生日期</li>
+                            <li>出生年份請使用民國年份 (例: 民國76年填寫76)</li>
+                            <li>設定完成後請點擊「儲存設定」</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-calendar-plus"></i> 立即掛號</h6>
+                        <ul class="small">
+                            <li>選擇特定日期進行單次掛號</li>
+                            <li>系統會開啟瀏覽器視窗</li>
+                            <li>需要手動完成 reCAPTCHA 驗證</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-robot"></i> 自動掛號</h6>
+                        <ul class="small">
+                            <li>可選擇多個星期進行批量掛號</li>
+                            <li>選擇開始和結束日期來設定掛號範圍</li>
+                            <li>系統會自動尋找範圍內可預約的門診時間</li>
+                            <li>例：選擇11/1到11/30，會掛11月份的門診</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-clock"></i> 排程功能</h6>
+                        <ul class="small">
+                            <li>可設定每日定時自動掛號</li>
+                            <li>建議設定在早上8點左右</li>
+                            <li>排程會持續運行直到手動停止</li>
+                            <li>內建自動驗證碼處理功能</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function () {
+        // 設定今天為最小日期
+        const today = new Date().toISOString().split('T')[0];
+        $('#targetDate').attr('min', today);
+        $('#startDate').attr('min', today);
+        $('#endDate').attr('min', today);
+
+        // 設定預設日期範圍 (今天到30天後)
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 30);
+        $('#startDate').val(today);
+        $('#endDate').val(endDate.toISOString().split('T')[0]);
+
+        // 當開始日期改變時，更新結束日期的最小值
+        $('#startDate').on('change', function () {
+            $('#endDate').attr('min', $(this).val());
+            if ($('#endDate').val() < $(this).val()) {
+                $('#endDate').val($(this).val());
+            }
+        });
+
+        // 載入排程狀態
+        loadScheduleStatus();
+
+        // 每30秒自動更新排程狀態
+        setInterval(loadScheduleStatus, 30000);
+
+        // 「啟用定時排程」開關變更時自動儲存
+        $('#scheduleEnabled').on('change', function () {
+            const enabled = $(this).is(':checked');
+
+            $.ajax({
+                url: '/api/config/schedule/toggle',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ enabled: enabled }),
+                success: function (response) {
+                    if (response.success) {
+                        const message = enabled ? '✅ 排程功能已啟用' : '⏹️ 排程功能已停用';
+                        showMessage(message, 'success', false); // 不自動隱藏
+                        loadScheduleStatus(); // 重新載入狀態
+                    } else {
+                        showMessage(response.message, 'error');
+                        // 如果失敗，恢復開關狀態
+                        $('#scheduleEnabled').prop('checked', !enabled);
+                    }
+                },
+                error: function () {
+                    showMessage('設定儲存失敗', 'error');
+                    // 如果失敗，恢復開關狀態
+                    $('#scheduleEnabled').prop('checked', !enabled);
+                }
+            });
+        });
+
+        // 檢查部署模式
+        checkDeploymentMode();
+
+        // 病患資料表單提交
+        $('#patientForm').on('submit', function (e) {
+            e.preventDefault();
+
+            const data = {
+                patient_info: {
+                    id_number: $('#idNumber').val(),
+                    birth_year: $('#birthYear').val(),
+                    birth_month: $('#birthMonth').val(),
+                    birth_day: $('#birthDay').val()
+                }
+            };
+
+            $.ajax({
+                url: '/api/config',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function (response) {
+                    if (response.success) {
+                        showMessage(response.message, 'success');
+                    } else {
+                        showMessage(response.message, 'error');
+                    }
+                }
+            });
+        });
+
+        // 立即掛號表單提交
+        $('#immediateForm').on('submit', function (e) {
+            e.preventDefault();
+
+            const targetDate = $('#targetDate').val();
+            if (!targetDate) {
+                showMessage('請選擇掛號日期', 'error');
+                return;
+            }
+
+            // 顯示執行狀態區塊
+            showExecutionStatus('立即掛號', `正在掛號 ${targetDate}`);
+            $('#immediateBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> 掛號中...');
+
+            $.ajax({
+                url: '/api/register/immediate',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ target_date: targetDate }),
+                success: function (response) {
+                    if (response.success) {
+                        showMessage(response.message, 'success');
+                        // 開始輪詢進度
+                        startProgressPolling('immediate');
+                    } else {
+                        showMessage(response.message, 'error');
+                        resetExecutionUI('immediate');
+                    }
+                },
+                error: function () {
+                    showMessage('請求失敗', 'error');
+                    resetExecutionUI('immediate');
+                }
+            });
+        });
+
+        // 自動掛號表單提交
+        $('#autoForm').on('submit', function (e) {
+            e.preventDefault();
+
+            const weekdays = getSelectedWeekdays();
+            const startDate = $('#startDate').val();
+            const endDate = $('#endDate').val();
+
+            if (weekdays.length === 0) {
+                showMessage('請選擇至少一個星期', 'error');
+                return;
+            }
+
+            if (!startDate || !endDate) {
+                showMessage('請選擇開始和結束日期', 'error');
+                return;
+            }
+
+            if (startDate > endDate) {
+                showMessage('開始日期不能晚於結束日期', 'error');
+                return;
+            }
+
+            // 顯示執行狀態區塊
+            const weekdayNames = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' };
+            const selectedDays = weekdays.map(w => '星期' + weekdayNames[w]).join('、');
+            showExecutionStatus('自動掛號', `正在掛號 ${selectedDays}，日期範圍: ${startDate} 到 ${endDate}`);
+
+            $.ajax({
+                url: '/api/register/auto',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    weekdays: weekdays,
+                    start_date: startDate,
+                    end_date: endDate
+                }),
+                success: function (response) {
+                    if (response.success) {
+                        showMessage(response.message, 'success');
+                        // 開始輪詢進度
+                        startProgressPolling('auto');
+                    } else {
+                        showMessage(response.message, 'error');
+                        resetExecutionUI('auto');
+                    }
+                },
+                error: function () {
+                    showMessage('請求失敗', 'error');
+                    resetExecutionUI('auto');
+                }
+            });
+        });
+
+        // 啟動排程
+        $('#startSchedule').on('click', function () {
+            // 檢查是否已啟用定時排程
+            if (!$('#scheduleEnabled').is(':checked')) {
+                // 自動啟用排程功能
+                $('#scheduleEnabled').prop('checked', true).trigger('change');
+
+                // 等待一下讓開關儲存完成，然後啟動排程
+                setTimeout(function () {
+                    startScheduleProcess();
+                }, 500);
+            } else {
+                startScheduleProcess();
+            }
+        });
+
+        function startScheduleProcess() {
+            $.ajax({
+                url: '/api/schedule/start',
+                method: 'POST',
+                success: function (response) {
+                    if (response.success) {
+                        showMessage('🚀 ' + response.message, 'success', false); // 不自動隱藏
+                        loadScheduleStatus();
+                    } else {
+                        showMessage(response.message, 'error');
+                    }
+                }
+            });
+        }
+
+        // 停止排程
+        $('#stopSchedule').on('click', function () {
+            $.ajax({
+                url: '/api/schedule/stop',
+                method: 'POST',
+                success: function (response) {
+                    if (response.success) {
+                        showMessage('⏹️ ' + response.message, 'success', false); // 不自動隱藏
+                        loadScheduleStatus();
+                    } else {
+                        showMessage(response.message, 'error');
+                    }
+                }
+            });
+        });
+
+        // 儲存排程設定按鈕
+        $('#saveScheduleSettings').on('click', function () {
+            const data = {
+                schedule: {
+                    enabled: $('#scheduleEnabled').is(':checked'),
+                    target_weekdays: getSelectedWeekdays(),
+                    check_time: $('#checkTime').val(),
+                    start_date: $('#startDate').val(),
+                    end_date: $('#endDate').val()
+                }
+            };
+
+            console.log('儲存排程設定:', data);
+
+            $.ajax({
+                url: '/api/config/schedule',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function (response) {
+                    console.log('儲存排程設定回應:', response);
+                    if (response.success) {
+                        showMessage('排程設定已儲存', 'success');
+                        loadScheduleStatus(); // 重新載入狀態
+                    } else {
+                        showMessage(response.message, 'error');
+                    }
+                },
+                error: function (xhr, status, error) {
+                    console.error('儲存排程設定失敗:', error);
+                    showMessage('儲存失敗: ' + error, 'error');
+                }
+            });
+        });
+    });
+
+    // 執行狀態管理
+    let progressInterval;
+
+    function showExecutionStatus(title, description) {
+        $('#executionTitle').text(title);
+        $('#executionMessage').text(description);
+        $('#executionProgressBar').css('width', '0%').attr('aria-valuenow', 0);
+        $('#executionProgressText').text('0%');
+        $('#executionLogs').html('<div class="text-muted">準備開始...</div>');
+        $('#executionStatusCard').show();
+
+        // 滾動到執行狀態區塊
+        $('html, body').animate({
+            scrollTop: $('#executionStatusCard').offset().top - 100
+        }, 500);
+    }
+
+    function startProgressPolling(type) {
+        progressInterval = setInterval(function () {
+            $.ajax({
+                url: '/api/progress',
+                method: 'GET',
+                success: function (data) {
+                    updateExecutionProgress(data.progress, data.message, data.logs);
+
+                    // 如果完成或錯誤，停止輪詢
+                    if (!data.is_running) {
+                        clearInterval(progressInterval);
+                        resetExecutionUI(type);
+                    }
+                }
+            });
+        }, 1000); // 每秒更新一次
+    }
+
+    function updateExecutionProgress(progress, message, logs) {
+        $('#executionProgressBar').css('width', progress + '%').attr('aria-valuenow', progress);
+        $('#executionProgressText').text(progress + '%');
+        $('#executionMessage').text(message);
+
+        // 更新日誌
+        const logsHtml = logs.map(log => `<div class="text-light mb-1">${log}</div>`).join('');
+        $('#executionLogs').html(logsHtml || '<div class="text-muted">無日誌</div>');
+
+        // 自動滾動到底部
+        const logsContainer = $('#executionLogs')[0];
+        logsContainer.scrollTop = logsContainer.scrollHeight;
+
+        // 如果完成，移除動畫效果
+        if (progress >= 100) {
+            $('#executionProgressBar').removeClass('progress-bar-animated');
+        }
+    }
+
+    function resetExecutionUI(type) {
+        if (type === 'immediate') {
+            $('#immediateBtn').prop('disabled', false).html('<i class="fas fa-play"></i> 立即掛號');
+        }
+        // 自動掛號沒有特定按鈕需要重置
+    }
+
+    function clearExecutionStatus() {
+        $('#executionStatusCard').hide();
+        if (progressInterval) {
+            clearInterval(progressInterval);
+        }
+    }
+
+    function getSelectedWeekdays() {
+        const weekdays = [];
+        // 只選擇星期的 checkbox (有 value 且不是 scheduleEnabled)
+        $('input[type="checkbox"]:checked').each(function () {
+            const value = $(this).val();
+            const id = $(this).attr('id');
+            if (value && !isNaN(value) && id !== 'scheduleEnabled') {
+                weekdays.push(parseInt(value));
+            }
+        });
+        return weekdays;
+    }
+
+    function loadScheduleStatus() {
+        $('#statusText').text('檢查中...');
+        $('#statusDetail').text('正在查詢排程狀態...');
+
+        $.ajax({
+            url: '/api/schedule/status',
+            method: 'GET',
+            success: function (response) {
+                const statusText = response.running ? '🟢 運行中' : '🔴 已停止';
+                const statusClass = response.running ? 'alert-success' : 'alert-warning';
+                const iconClass = response.running ? 'fas fa-play-circle' : 'fas fa-stop-circle';
+                // 建立詳細的排程資訊
+                let detailText = '';
+                if (response.running && response.config) {
+                    // 使用後端返回的真實設定資料
+                    const weekdayNames = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' };
+                    const weekdayText = response.config.target_weekdays.map(w => '星期' + weekdayNames[w]).join('、');
+
+                    detailText = `每日 ${response.config.check_time} 自動執行掛號<br>`;
+                    detailText += `<small class="text-muted">目標星期: ${weekdayText || '未設定'}<br>`;
+                    detailText += `日期範圍: ${response.config.start_date || '未設定'} 到 ${response.config.end_date || '未設定'}</small>`;
+                } else if (response.running) {
+                    detailText = `每日執行自動掛號<br><small class="text-muted">無法取得詳細設定</small>`;
+                } else {
+                    detailText = '點擊「開始監控時間」按鈕開始排程';
+                }
+
+                $('#scheduleStatus').removeClass('alert-info alert-success alert-warning alert-danger')
+                    .addClass(statusClass);
+                $('#statusText').text(statusText);
+                $('#statusIcon').removeClass().addClass(iconClass);
+                $('#statusDetail').html(detailText);
+
+                console.log('排程狀態更新:', response);
+            },
+            error: function () {
+                $('#statusText').text('❌ 無法取得狀態');
+                $('#statusDetail').text('請檢查系統是否正常運行');
+                $('#scheduleStatus').removeClass('alert-info alert-success alert-warning')
+                    .addClass('alert-danger');
+            }
+        });
+    }
+
+    function checkDeploymentMode() {
+        // 檢查是否為雲端部署
+        const isCloud = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+
+        if (isCloud) {
+            $('#deploymentMode').removeClass('bg-success').addClass('bg-primary').text('雲端模式');
+
+            // 雲端模式的提示
+            showMessage('雲端模式：已啟用自動驗證碼處理功能', 'info');
+        }
+    }
+</script>
+{% endblock %}

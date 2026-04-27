@@ -1,0 +1,26 @@
+{
+  "patient_info": {
+    "id_number": "A125819891",
+    "birth_year": "76",
+    "birth_month": "04",
+    "birth_day": "04"
+  },
+  "schedule": {
+    "enabled": true,
+    "target_weekdays": [
+      2,
+      3,
+      5
+    ],
+    "check_time": "14:30",
+    "start_date": "2026-01-21",
+    "end_date": "2026-01-21"
+  },
+  "doctor_info": {
+    "section": "IMRH",
+    "section_name": "免疫風濕",
+    "doctor_no": "0961F",
+    "doctor_name": "黃文男"
+  },
+  "cloud_deployment": false
+}

@@ -1,0 +1,4 @@
+flask==2.3.3
+playwright==1.40.0
+schedule==1.2.0
+requests==2.31.0
