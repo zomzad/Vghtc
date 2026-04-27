@@ -22,5 +22,6 @@
     "doctor_no": "0961F",
     "doctor_name": "黃文男"
   },
-  "cloud_deployment": false
+  "cloud_deployment": false,
+  "capsolver_api_key": "CAP-1BBB5FD85D4D26DB1D30C5ACD2CFAB40BD7D01298BA0B8FC204F87118012FB95"
 }

@@ -13,6 +13,8 @@ import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from playwright.async_api import async_playwright, Page, Browser
+from playwright_stealth import Stealth
+import capsolver
 import schedule
 import time
 import threading
@@ -125,6 +127,9 @@ class VGHTCAutoRegister:
 
         self.browser = await playwright.chromium.launch(**launch_options)
         self.page = await self.browser.new_page()
+
+        # 套用 stealth 偽裝，讓 reCAPTCHA 認為是正常瀏覽器
+        await Stealth().apply_stealth_async(self.page)
 
         # 設定 User-Agent 和其他選項
         await self.page.set_extra_http_headers({
@@ -414,35 +419,112 @@ class VGHTCAutoRegister:
     async def handle_recaptcha(self):
         """處理 reCAPTCHA 驗證"""
         try:
-            # 檢查是否有 reCAPTCHA
+            # 等待頁面穩定後再偵測
+            await self.page.wait_for_timeout(2000)
+
+            # 診斷：列出所有 iframe
+            all_frames = self.page.frames
+            logger.info(f"頁面共有 {len(all_frames)} 個 frame")
+            for f in all_frames:
+                logger.info(f"  frame URL: {f.url[:100]}")
+
+            # 診斷：找 data-sitekey
+            sitekey_el = await self.page.query_selector('[data-sitekey]')
+            logger.info(f"data-sitekey 元素: {sitekey_el}")
+
             recaptcha_frame = await self.page.query_selector('iframe[src*="recaptcha"]')
 
-            if recaptcha_frame:
-                logger.info("偵測到 reCAPTCHA，嘗試處理...")
-
-                # 方法1: 嘗試使用 2captcha 服務
-                captcha_api_key = "b8dfe5b269d619f22045cef4ad78663a"
-                success = await self.solve_recaptcha_with_service(captcha_api_key)
-                if success:
-                    logger.info("reCAPTCHA 自動解決成功")
-                    return
-
-                # 方法2: 雲端環境下的自動處理
-                is_cloud = os.getenv('CLOUD_DEPLOYMENT',
-                                     'false').lower() == 'true'
-                if is_cloud:
-                    logger.info("雲端環境：嘗試自動處理 reCAPTCHA...")
-                    await self.auto_handle_recaptcha()
-                else:
-                    # 方法3: 本地環境等待手動處理
-                    logger.info("本地環境：等待手動完成 reCAPTCHA 驗證 (30秒)...")
-                    await self.page.wait_for_timeout(30000)
-            else:
+            if not recaptcha_frame:
                 logger.info("未偵測到 reCAPTCHA，繼續執行")
+                return
+
+            logger.info("偵測到 reCAPTCHA，使用 CapSolver 解題...")
+            if await self.solve_recaptcha_with_capsolver():
+                logger.info("reCAPTCHA CapSolver 解決成功")
+                return
+
+            # fallback: 本地環境等待手動處理
+            is_cloud = os.getenv('CLOUD_DEPLOYMENT', 'false').lower() == 'true'
+            if not is_cloud:
+                logger.info("CapSolver 失敗，等待手動完成 reCAPTCHA 驗證 (60秒)...")
+                await self.page.wait_for_timeout(60000)
 
         except Exception as e:
             logger.warning(f"reCAPTCHA 處理過程發生錯誤: {e}")
-            # 繼續執行，不中斷流程
+
+    async def solve_recaptcha_with_capsolver(self) -> bool:
+        """使用 CapSolver ML 服務解決 reCAPTCHA v2"""
+        try:
+            api_key = self.config.get('capsolver_api_key', '')
+            if not api_key:
+                logger.warning("未設定 capsolver_api_key")
+                return False
+
+            capsolver.api_key = api_key
+
+            # 取得 site key
+            site_key = await self.page.get_attribute('[data-sitekey]', 'data-sitekey')
+            if not site_key:
+                site_key = '6LedJkIeAAAAALoCNvLVaP1QM9SV2psBNZ9qBCPc'
+            current_url = self.page.url
+
+            logger.info(f"送出 CapSolver 任務 (site_key: {site_key[:20]}...)")
+            solution = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: capsolver.solve({
+                    "type": "ReCaptchaV2TaskProxyless",
+                    "websiteURL": current_url,
+                    "websiteKey": site_key,
+                })
+            )
+
+            token = solution.get("gRecaptchaResponse")
+            if not token:
+                logger.error("CapSolver 未回傳 token")
+                return False
+
+            # 注入 token 並觸發 reCAPTCHA callback
+            await self.page.evaluate(f"""
+                (function() {{
+                    var token = "{token}";
+
+                    // 1. 寫入隱藏欄位
+                    var resp = document.getElementById("g-recaptcha-response");
+                    if (resp) {{
+                        resp.style.display = "block";
+                        resp.innerHTML = token;
+                    }}
+
+                    // 2. 呼叫 data-callback 指定的函式
+                    var el = document.querySelector("[data-callback]");
+                    if (el) {{
+                        var cbName = el.getAttribute("data-callback");
+                        if (cbName && typeof window[cbName] === "function") {{
+                            window[cbName](token);
+                        }}
+                    }}
+
+                    // 3. 透過 grecaptcha 內部 clients 觸發 callback（最通用）
+                    try {{
+                        var clients = window.___grecaptcha_cfg.clients;
+                        Object.keys(clients).forEach(function(key) {{
+                            var client = clients[key];
+                            Object.keys(client).forEach(function(k) {{
+                                if (client[k] && typeof client[k].callback === "function") {{
+                                    client[k].callback(token);
+                                }}
+                            }});
+                        }});
+                    }} catch(e) {{}}
+                }})();
+            """)
+            await self.page.wait_for_timeout(1000)
+            logger.info("CapSolver token 注入並觸發 callback 成功")
+            return True
+
+        except Exception as e:
+            logger.error(f"CapSolver 解題失敗: {e}")
+            return False
 
     async def solve_recaptcha_with_service(self, api_key: str) -> bool:
         """使用第三方服務解決 reCAPTCHA"""
