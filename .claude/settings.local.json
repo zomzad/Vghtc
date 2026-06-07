@@ -6,7 +6,16 @@
       "Bash(python3 -m pip show playwright-stealth)",
       "Bash(\"D:\\\\專案\\\\SideProject\\\\vghtc-register\\\\venv\\\\bin\\\\python\" -m pip list)",
       "Bash(\"D:\\\\專案\\\\SideProject\\\\vghtc-register\\\\venv\\\\bin\\\\python\" --version)",
-      "PowerShell(Stop-Process -Id 46140 -Force 2>&1)"
+      "PowerShell(Stop-Process -Id 46140 -Force 2>&1)",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(cd /mnt/e/Code/SideProject/Vghtc && ls venv_win/Scripts/ | grep python)",
+      "Bash(cmd.exe /c \"venv_win\\\\Scripts\\\\python.exe -c \\\\\"import flask; print\\('Flask OK'\\)\\\\\"\")",
+      "PowerShell(& \"venv_win\\\\Scripts\\\\python.exe\" -c \"import flask; print\\('Flask OK'\\)\")",
+      "PowerShell(Start-Sleep -Seconds 3; try { $r = Invoke-WebRequest -Uri \"http://localhost:5000\" -UseBasicParsing -TimeoutSec 5; \"Status: $\\($r.StatusCode\\)\" } catch { \"Error: $\\($_.Exception.Message\\)\" })",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "PowerShell($edge = \"C:\\\\Program Files \\(x86\\)\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe\"; & $edge \"http://localhost:5001/login\"; Start-Sleep -Seconds 4; Write-Output \"done\")",
+      "PowerShell(Get-Process python | Where-Object { $_.Id -ne 25316 } | Stop-Process -Force; Start-Sleep -Seconds 1; $env:PORT=\"5001\"; $p = Start-Process python -ArgumentList \"web_interface.py\" -WindowStyle Hidden -PassThru; Start-Sleep -Seconds 3; try { $r = Invoke-WebRequest -Uri \"http://localhost:5001\" -UseBasicParsing -TimeoutSec 5; \"OK PID=$\\($p.Id\\) Status=$\\($r.StatusCode\\)\" } catch { \"Error: $_\" })"
     ]
   }
 }

@@ -607,6 +607,96 @@ class VGHTCAutoRegister:
         except Exception as e:
             logger.warning(f"自動處理 reCAPTCHA 失敗: {e}")
 
+    async def get_all_doctor_schedule(self) -> List[Dict]:
+        """取得醫師所有門診日期及額滿狀態"""
+        results = []
+        try:
+            import re
+            # 找所有包含日期資訊的列，包含可預約和額滿
+            # 先抓可預約的連結
+            reservation_links = await self.page.query_selector_all('a:has-text("【預約】")')
+            available_dates = set()
+
+            for link in reservation_links:
+                text_content = ""
+                current_element = link
+                for _ in range(5):
+                    parent = await current_element.query_selector('xpath=..')
+                    if parent:
+                        parent_text = await parent.text_content()
+                        if re.search(r'\d{3}\.', parent_text):
+                            text_content = parent_text
+                            break
+                        current_element = parent
+                    else:
+                        break
+                if not text_content:
+                    text_content = await link.text_content()
+
+                date_match = re.search(r'(\d{3})\.(\d{1,2})\.(\d{1,2})', text_content)
+                if date_match:
+                    roc_year = int(date_match.group(1))
+                    month = int(date_match.group(2))
+                    day = int(date_match.group(3))
+                    ad_year = roc_year + 1911
+                    try:
+                        full_date = datetime(ad_year, month, day)
+                        date_str = full_date.strftime('%Y-%m-%d')
+                        available_dates.add(date_str)
+                        results.append({
+                            'date': date_str,
+                            'weekday': full_date.weekday() + 1,
+                            'status': 'available',
+                            'days_from_today': (full_date.date() - datetime.now().date()).days
+                        })
+                    except ValueError:
+                        continue
+
+            # 再抓額滿的項目
+            full_elements = await self.page.query_selector_all('*:has-text("額滿")')
+            for el in full_elements:
+                text_content = await el.text_content()
+                if '額滿' not in text_content:
+                    continue
+                date_match = re.search(r'(\d{3})\.(\d{1,2})\.(\d{1,2})', text_content)
+                if date_match:
+                    roc_year = int(date_match.group(1))
+                    month = int(date_match.group(2))
+                    day = int(date_match.group(3))
+                    ad_year = roc_year + 1911
+                    try:
+                        full_date = datetime(ad_year, month, day)
+                        date_str = full_date.strftime('%Y-%m-%d')
+                        if date_str not in available_dates:
+                            available_dates.add(date_str)
+                            results.append({
+                                'date': date_str,
+                                'weekday': full_date.weekday() + 1,
+                                'status': 'full',
+                                'days_from_today': (full_date.date() - datetime.now().date()).days
+                            })
+                    except ValueError:
+                        continue
+
+            results.sort(key=lambda x: x['date'])
+            logger.info(f"取得醫師門診時間表: {len(results)} 筆（可預約 {sum(1 for r in results if r['status']=='available')} 筆，額滿 {sum(1 for r in results if r['status']=='full')} 筆）")
+            return results
+
+        except Exception as e:
+            logger.error(f"取得醫師門診時間表失敗: {e}")
+            return []
+
+    async def fetch_doctor_schedule(self) -> List[Dict]:
+        """啟動瀏覽器、導航並回傳完整門診時間表"""
+        try:
+            is_cloud = os.getenv('CLOUD_DEPLOYMENT', 'false').lower() == 'true'
+            await self.init_browser(headless=True)
+            if not await self.navigate_to_doctor_schedule():
+                return []
+            return await self.get_all_doctor_schedule()
+        finally:
+            await self.close_browser()
+
     async def auto_register_by_date_range(self, target_weekdays: List[int], start_date: str = None, end_date: str = None):
         """在指定日期範圍內自動掛號"""
         try:

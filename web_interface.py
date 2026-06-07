@@ -264,6 +264,37 @@ def immediate_register():
         return jsonify({'success': False, 'message': str(e)})
 
 
+@app.route('/api/doctor/schedule', methods=['GET'])
+@login_required
+def get_doctor_schedule():
+    """查詢醫師所有可掛號日期及額滿狀態"""
+    try:
+        if progress_status['is_running']:
+            return jsonify({'success': False, 'message': '系統正在執行掛號，請稍後再試'})
+
+        def run_fetch():
+            try:
+                result = asyncio.run(auto_register.fetch_doctor_schedule())
+                progress_status['schedule_result'] = result
+                progress_status['schedule_fetching'] = False
+            except Exception as e:
+                logger.error(f"查詢門診時間表失敗: {e}")
+                progress_status['schedule_result'] = []
+                progress_status['schedule_fetching'] = False
+
+        progress_status['schedule_fetching'] = True
+        progress_status['schedule_result'] = None
+        thread = threading.Thread(target=run_fetch, daemon=True)
+        thread.start()
+        thread.join(timeout=60)
+
+        result = progress_status.get('schedule_result', [])
+        return jsonify({'success': True, 'data': result})
+    except Exception as e:
+        logger.error(f"查詢門診時間表失敗: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+
 @app.route('/api/progress', methods=['GET'])
 def get_progress():
     """取得掛號進度"""

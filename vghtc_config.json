@@ -6,7 +6,7 @@
     "birth_day": "04"
   },
   "schedule": {
-    "enabled": true,
+    "enabled": false,
     "target_weekdays": [
       2,
       3,

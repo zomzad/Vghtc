@@ -1,12 +1,69 @@
 {% extends "base.html" %}
 
+{% block styles %}
+<style>
+.nav-tabs {
+    border-bottom: 1px solid #4a4a4a !important;
+}
+.nav-tabs .nav-link {
+    color: #bcaaa4 !important;
+    background: transparent !important;
+    border-color: transparent !important;
+}
+.nav-tabs .nav-link:hover {
+    color: #f5f5f5 !important;
+    border-color: #4a4a4a !important;
+}
+.nav-tabs .nav-link.active {
+    color: #f5f5f5 !important;
+    background: #3a342f !important;
+    border-color: #4a4a4a #4a4a4a #3a342f !important;
+}
+.table tbody tr.full-row td .badge {
+    color: #fff !important;
+}
+#scheduleTable tbody td,
+#scheduleTable thead th {
+    border-top: none;
+    border-bottom: none;
+    padding-left: 16px;
+}
+#scheduleTable tbody tr:nth-child(odd) td {
+    background-color: #ffffff !important;
+}
+#scheduleTable tbody tr:nth-child(even) td {
+    background-color: #f3f3f3 !important;
+}
+#scheduleTable {
+    border-radius: 10px;
+    overflow: hidden;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+#scheduleTable thead tr {
+    background-color: #f0f0f0;
+}
+#scheduleTable thead th {
+    color: #333;
+    font-weight: 600;
+    border-bottom: none;
+}
+[data-theme="dark"] #scheduleTable thead tr {
+    background-color: #3a3a3a;
+}
+[data-theme="dark"] #scheduleTable thead th {
+    color: #e0e0e0;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div id="messages"></div>
 
 <div class="row">
     <!-- 病患資料設定 -->
-    <div class="col-md-6">
-        <div class="card mb-4">
+    <div class="col-md-6 d-flex">
+        <div class="card mb-4 w-100">
             <div class="card-header">
                 <i class="fas fa-user"></i> 病患資料設定
             </div>
@@ -64,8 +121,8 @@
     </div>
 
     <!-- 醫師資訊 -->
-    <div class="col-md-6">
-        <div class="card mb-4">
+    <div class="col-md-6 d-flex">
+        <div class="card mb-4 w-100">
             <div class="card-header">
                 <i class="fas fa-user-md"></i> 醫師資訊
             </div>
@@ -97,134 +154,215 @@
     </div>
 </div>
 
+<!-- 可掛號日期查詢 -->
 <div class="row">
-    <!-- 立即掛號 -->
-    <div class="col-md-6">
+    <div class="col-12">
         <div class="card mb-4">
-            <div class="card-header">
-                <i class="fas fa-calendar-plus"></i> 立即掛號
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-calendar-alt"></i> 黃文男醫師可掛號日期查詢</span>
+                <button class="btn btn-sm btn-outline-light" id="fetchScheduleBtn" onclick="fetchDoctorSchedule()">
+                    <i class="fas fa-sync-alt"></i> 查詢最新時段
+                </button>
             </div>
             <div class="card-body">
-                <p class="text-muted">選擇特定日期進行掛號</p>
-                <form id="immediateForm">
-                    <div class="mb-3">
-                        <label for="targetDate" class="form-label">掛號日期</label>
-                        <input type="date" class="form-control" id="targetDate" required>
-                    </div>
-                    <button type="submit" class="btn btn-success" id="immediateBtn">
-                        <i class="fas fa-play"></i> 立即掛號
-                    </button>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- 自動掛號設定 -->
-    <div class="col-md-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                <i class="fas fa-robot"></i> 自動掛號設定
-            </div>
-            <div class="card-body">
-                <p class="text-muted">設定自動掛號的星期和範圍</p>
-                <form id="autoForm">
-                    <div class="mb-3">
-                        <label class="form-label">目標星期 (可複選)</label>
-                        <div class="row">
-                            <div class="col-4">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" value="2" id="tue" {% if 2 in
-                                        config.schedule.target_weekdays %}checked{% endif %}>
-                                    <label class="form-check-label" for="tue">星期二</label>
-                                </div>
-                            </div>
-                            <div class="col-4">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" value="3" id="wed" {% if 3 in
-                                        config.schedule.target_weekdays %}checked{% endif %}>
-                                    <label class="form-check-label" for="wed">星期三</label>
-                                </div>
-                            </div>
-                            <div class="col-4">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" value="5" id="fri" {% if 5 in
-                                        config.schedule.target_weekdays %}checked{% endif %}>
-                                    <label class="form-check-label" for="fri">星期五</label>
-                                </div>
-                            </div>
+                <div id="scheduleLoading" style="display:none;" class="text-center py-3">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 text-muted">正在連線台中榮總查詢，請稍候...</p>
+                </div>
+                <div id="scheduleResult" style="display:none;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="d-flex gap-3">
+                            <span class="text-success small"><i class="fas fa-circle-check"></i> 可預約 <strong id="availableCount">0</strong> 個</span>
+                            <span class="text-danger small"><i class="fas fa-circle-xmark"></i> 額滿 <strong id="fullCount">0</strong> 個</span>
                         </div>
+                        <span class="small text-muted" id="fetchTime"></span>
                     </div>
-
-                    <div class="row">
-                        <div class="col-md-6">
-                            <label for="startDate" class="form-label">開始日期</label>
-                            <input type="date" class="form-control" id="startDate"
-                                value="{{ config.schedule.start_date or '' }}" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="endDate" class="form-label">結束日期</label>
-                            <input type="date" class="form-control" id="endDate"
-                                value="{{ config.schedule.end_date or '' }}" required>
-                        </div>
+                    <div style="max-height: 380px; overflow-y: auto;">
+                        <table class="table table-sm mb-0" id="scheduleTable">
+                            <thead>
+                                <tr>
+                                    <th>日期</th>
+                                    <th>星期</th>
+                                    <th>距今</th>
+                                    <th>狀態</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="scheduleTableBody"></tbody>
+                        </table>
                     </div>
-                    <div class="form-text mt-2">
-                        <i class="fas fa-info-circle"></i> 選擇掛號的日期範圍，系統會在此範圍內尋找符合星期條件的門診
-                    </div>
-
-                    <div class="btn-group" role="group">
-                        <button type="button" class="btn btn-success" id="saveScheduleSettings">
-                            <i class="fas fa-save"></i> 儲存排程設定
-                        </button>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-magic"></i> 開始自動掛號
-                        </button>
-                    </div>
-                </form>
+                </div>
+                <div id="schedulePlaceholder" class="text-center py-3 text-muted">
+                    <i class="fas fa-calendar-times fa-2x mb-2 d-block"></i>
+                    點擊「查詢最新時段」按鈕，系統將自動連線台中榮總查詢黃文男醫師的門診時段
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- 排程管理 -->
+<!-- 立即執行掛號 -->
 <div class="row">
     <div class="col-12">
         <div class="card mb-4">
             <div class="card-header">
-                <i class="fas fa-clock"></i> 排程管理
+                <i class="fas fa-play-circle"></i> 立即執行掛號
             </div>
             <div class="card-body">
-                <div class="row align-items-center">
-                    <div class="col-md-6">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="scheduleEnabled" {% if
-                                config.schedule.enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="scheduleEnabled">
-                                啟動排程功能
-                            </label>
+                <ul class="nav nav-tabs mb-3" id="registerTabs">
+                    <li class="nav-item">
+                        <button class="nav-link active" id="tab-single" data-tab="single" onclick="switchTab('single')">
+                            <i class="fas fa-calendar-day"></i> 指定單一日期
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="tab-range" data-tab="range" onclick="switchTab('range')">
+                            <i class="fas fa-calendar-week"></i> 日期範圍＋星期
+                        </button>
+                    </li>
+                </ul>
+
+                <!-- 單一日期 -->
+                <div id="pane-single">
+                    <form id="immediateForm">
+                        <div class="row align-items-end">
+                            <div class="col-md-4">
+                                <label for="targetDate" class="form-label">掛號日期</label>
+                                <input type="date" class="form-control" id="targetDate" required>
+                            </div>
+                            <div class="col-md-4 mt-3 mt-md-0">
+                                <button type="submit" class="btn btn-primary w-100" id="immediateBtn">
+                                    <i class="fas fa-play"></i> 立即掛號
+                                </button>
+                            </div>
                         </div>
-                        <small class="text-muted">
-                            每日 {{ config.schedule.check_time }} 自動執行掛號
-                        </small>
+                    </form>
+                </div>
+
+                <!-- 日期範圍 + 星期 -->
+                <div id="pane-range" style="display:none;">
+                    <form id="autoForm">
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <label class="form-label">目標星期（可複選）</label>
+                                <div class="d-flex gap-3 flex-wrap">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="1" id="range-mon">
+                                        <label class="form-check-label" for="range-mon">星期一</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="2" id="range-tue" {% if 2 in config.schedule.target_weekdays %}checked{% endif %}>
+                                        <label class="form-check-label" for="range-tue">星期二</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="3" id="range-wed" {% if 3 in config.schedule.target_weekdays %}checked{% endif %}>
+                                        <label class="form-check-label" for="range-wed">星期三</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="4" id="range-thu">
+                                        <label class="form-check-label" for="range-thu">星期四</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="5" id="range-fri" {% if 5 in config.schedule.target_weekdays %}checked{% endif %}>
+                                        <label class="form-check-label" for="range-fri">星期五</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="6" id="range-sat">
+                                        <label class="form-check-label" for="range-sat">星期六</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row align-items-end">
+                            <div class="col-md-3">
+                                <label for="rangeStartDate" class="form-label">開始日期</label>
+                                <input type="date" class="form-control" id="rangeStartDate" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="rangeEndDate" class="form-label">結束日期</label>
+                                <input type="date" class="form-control" id="rangeEndDate" required>
+                            </div>
+                            <div class="col-md-3 mt-3 mt-md-0">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="fas fa-play"></i> 開始掛號
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-text mt-2">
+                            <i class="fas fa-info-circle"></i> 在指定範圍內找出符合星期條件的門診並依序掛號
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 定時排程設定 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-clock"></i> 定時排程設定</span>
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" id="scheduleEnabled" {% if config.schedule.enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="scheduleEnabled">啟用排程</label>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label">目標星期（可複選）</label>
+                        <div class="d-flex gap-3 flex-wrap">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="1" id="sch-mon">
+                                <label class="form-check-label" for="sch-mon">星期一</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="2" id="sch-tue" {% if 2 in config.schedule.target_weekdays %}checked{% endif %}>
+                                <label class="form-check-label" for="sch-tue">星期二</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="3" id="sch-wed" {% if 3 in config.schedule.target_weekdays %}checked{% endif %}>
+                                <label class="form-check-label" for="sch-wed">星期三</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="4" id="sch-thu">
+                                <label class="form-check-label" for="sch-thu">星期四</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="5" id="sch-fri" {% if 5 in config.schedule.target_weekdays %}checked{% endif %}>
+                                <label class="form-check-label" for="sch-fri">星期五</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="6" id="sch-sat">
+                                <label class="form-check-label" for="sch-sat">星期六</label>
+                            </div>
+                        </div>
                     </div>
                     <div class="col-md-3">
+                        <label for="schStartDate" class="form-label">掛號範圍：開始</label>
+                        <input type="date" class="form-control" id="schStartDate" value="{{ config.schedule.start_date or '' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="schEndDate" class="form-label">掛號範圍：結束</label>
+                        <input type="date" class="form-control" id="schEndDate" value="{{ config.schedule.end_date or '' }}">
+                    </div>
+                    <div class="col-md-2">
+                        <label for="checkTime" class="form-label">每日執行時間</label>
                         <input type="time" class="form-control" id="checkTime" value="{{ config.schedule.check_time }}">
                     </div>
-                    <div class="col-md-3">
-                        <div class="btn-group" role="group">
-                            <button type="button" class="btn btn-success" id="startSchedule">
-                                <i class="fas fa-clock"></i> 開始監控時間
-                            </button>
-                            <button type="button" class="btn btn-danger" id="stopSchedule">
-                                <i class="fas fa-stop"></i> 停止
-                            </button>
-                        </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button type="button" class="btn btn-primary w-100" id="saveScheduleSettings">
+                            <i class="fas fa-save"></i> 儲存設定
+                        </button>
                     </div>
                 </div>
 
                 <div class="mt-3">
-                    <div class="alert alert-info" id="scheduleStatus">
+                    <div class="alert alert-info mb-0" id="scheduleStatus">
                         <i class="fas fa-info-circle" id="statusIcon"></i>
-                        <strong>排程狀態:</strong> <span id="statusText">載入中...</span>
+                        <strong>排程狀態：</strong><span id="statusText">載入中...</span>
                         <small class="d-block mt-1" id="statusDetail">正在檢查排程狀態...</small>
                     </div>
                 </div>
@@ -276,315 +414,175 @@
     </div>
 </div>
 
-<!-- 使用說明 -->
-<div class="row">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <i class="fas fa-question-circle"></i> 使用說明
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6><i class="fas fa-user"></i> 病患資料設定</h6>
-                        <ul class="small">
-                            <li>請填寫正確的身分證字號和出生日期</li>
-                            <li>出生年份請使用民國年份 (例: 民國76年填寫76)</li>
-                            <li>設定完成後請點擊「儲存設定」</li>
-                        </ul>
-                    </div>
-                    <div class="col-md-6">
-                        <h6><i class="fas fa-calendar-plus"></i> 立即掛號</h6>
-                        <ul class="small">
-                            <li>選擇特定日期進行單次掛號</li>
-                            <li>系統會開啟瀏覽器視窗</li>
-                            <li>需要手動完成 reCAPTCHA 驗證</li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="row mt-3">
-                    <div class="col-md-6">
-                        <h6><i class="fas fa-robot"></i> 自動掛號</h6>
-                        <ul class="small">
-                            <li>可選擇多個星期進行批量掛號</li>
-                            <li>選擇開始和結束日期來設定掛號範圍</li>
-                            <li>系統會自動尋找範圍內可預約的門診時間</li>
-                            <li>例：選擇11/1到11/30，會掛11月份的門診</li>
-                        </ul>
-                    </div>
-                    <div class="col-md-6">
-                        <h6><i class="fas fa-clock"></i> 排程功能</h6>
-                        <ul class="small">
-                            <li>可設定每日定時自動掛號</li>
-                            <li>建議設定在早上8點左右</li>
-                            <li>排程會持續運行直到手動停止</li>
-                            <li>內建自動驗證碼處理功能</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+    function switchTab(tab) {
+        $('#pane-single, #pane-range').hide();
+        $('#tab-single, #tab-range').removeClass('active');
+        $('#pane-' + tab).show();
+        $('#tab-' + tab).addClass('active');
+    }
+
+    function getRangeWeekdays() {
+        const days = [];
+        $('#pane-range input[type="checkbox"]:checked').each(function () {
+            days.push(parseInt($(this).val()));
+        });
+        return days;
+    }
+
+    function getSchWeekdays() {
+        const days = [];
+        $('#sch-mon, #sch-tue, #sch-wed, #sch-thu, #sch-fri, #sch-sat').filter(':checked').each(function () {
+            days.push(parseInt($(this).val()));
+        });
+        return days;
+    }
+
     $(document).ready(function () {
-        // 設定今天為最小日期
         const today = new Date().toISOString().split('T')[0];
+        const thirtyDaysLater = new Date();
+        thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
+        const laterStr = thirtyDaysLater.toISOString().split('T')[0];
+
         $('#targetDate').attr('min', today);
-        $('#startDate').attr('min', today);
-        $('#endDate').attr('min', today);
+        $('#rangeStartDate').attr('min', today).val(today);
+        $('#rangeEndDate').attr('min', today).val(laterStr);
+        $('#schStartDate').attr('min', today);
+        $('#schEndDate').attr('min', today);
 
-        // 設定預設日期範圍 (今天到30天後)
-        const endDate = new Date();
-        endDate.setDate(endDate.getDate() + 30);
-        $('#startDate').val(today);
-        $('#endDate').val(endDate.toISOString().split('T')[0]);
-
-        // 當開始日期改變時，更新結束日期的最小值
-        $('#startDate').on('change', function () {
-            $('#endDate').attr('min', $(this).val());
-            if ($('#endDate').val() < $(this).val()) {
-                $('#endDate').val($(this).val());
-            }
+        $('#rangeStartDate').on('change', function () {
+            $('#rangeEndDate').attr('min', $(this).val());
+            if ($('#rangeEndDate').val() < $(this).val()) $('#rangeEndDate').val($(this).val());
         });
 
-        // 載入排程狀態
         loadScheduleStatus();
-
-        // 每30秒自動更新排程狀態
         setInterval(loadScheduleStatus, 30000);
+        checkDeploymentMode();
 
-        // 「啟用定時排程」開關變更時自動儲存
+        // 啟用排程開關 → 同時儲存設定 + 啟動/停止執行緒
         $('#scheduleEnabled').on('change', function () {
             const enabled = $(this).is(':checked');
-
+            // 先儲存 enabled 狀態
             $.ajax({
                 url: '/api/config/schedule/toggle',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({ enabled: enabled }),
-                success: function (response) {
-                    if (response.success) {
-                        const message = enabled ? '✅ 排程功能已啟用' : '⏹️ 排程功能已停用';
-                        showMessage(message, 'success', false); // 不自動隱藏
-                        loadScheduleStatus(); // 重新載入狀態
-                    } else {
-                        showMessage(response.message, 'error');
-                        // 如果失敗，恢復開關狀態
+                success: function (r) {
+                    if (!r.success) {
+                        showMessage(r.message, 'error');
                         $('#scheduleEnabled').prop('checked', !enabled);
+                        return;
                     }
+                    // 再啟動或停止執行緒
+                    const threadUrl = enabled ? '/api/schedule/start' : '/api/schedule/stop';
+                    $.ajax({
+                        url: threadUrl, method: 'POST',
+                        success: function (r2) {
+                            showMessage(enabled ? '✅ 排程已啟動' : '⏹️ 排程已停止', 'success', false);
+                            loadScheduleStatus();
+                        },
+                        error: function () {
+                            showMessage('排程操作失敗', 'error');
+                            loadScheduleStatus();
+                        }
+                    });
                 },
                 error: function () {
                     showMessage('設定儲存失敗', 'error');
-                    // 如果失敗，恢復開關狀態
                     $('#scheduleEnabled').prop('checked', !enabled);
                 }
             });
         });
 
-        // 檢查部署模式
-        checkDeploymentMode();
-
-        // 病患資料表單提交
+        // 病患資料
         $('#patientForm').on('submit', function (e) {
             e.preventDefault();
-
-            const data = {
-                patient_info: {
-                    id_number: $('#idNumber').val(),
-                    birth_year: $('#birthYear').val(),
-                    birth_month: $('#birthMonth').val(),
-                    birth_day: $('#birthDay').val()
-                }
-            };
-
             $.ajax({
                 url: '/api/config',
                 method: 'POST',
                 contentType: 'application/json',
-                data: JSON.stringify(data),
-                success: function (response) {
-                    if (response.success) {
-                        showMessage(response.message, 'success');
-                    } else {
-                        showMessage(response.message, 'error');
+                data: JSON.stringify({
+                    patient_info: {
+                        id_number: $('#idNumber').val(),
+                        birth_year: $('#birthYear').val(),
+                        birth_month: $('#birthMonth').val(),
+                        birth_day: $('#birthDay').val()
                     }
-                }
+                }),
+                success: function (r) { showMessage(r.message, r.success ? 'success' : 'error'); }
             });
         });
 
-        // 立即掛號表單提交
+        // 立即掛號（單一日期）
         $('#immediateForm').on('submit', function (e) {
             e.preventDefault();
-
             const targetDate = $('#targetDate').val();
-            if (!targetDate) {
-                showMessage('請選擇掛號日期', 'error');
-                return;
-            }
-
-            // 顯示執行狀態區塊
+            if (!targetDate) { showMessage('請選擇掛號日期', 'error'); return; }
             showExecutionStatus('立即掛號', `正在掛號 ${targetDate}`);
             $('#immediateBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> 掛號中...');
-
             $.ajax({
                 url: '/api/register/immediate',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({ target_date: targetDate }),
-                success: function (response) {
-                    if (response.success) {
-                        showMessage(response.message, 'success');
-                        // 開始輪詢進度
-                        startProgressPolling('immediate');
-                    } else {
-                        showMessage(response.message, 'error');
-                        resetExecutionUI('immediate');
-                    }
+                success: function (r) {
+                    if (r.success) { showMessage(r.message, 'success'); startProgressPolling('immediate'); }
+                    else { showMessage(r.message, 'error'); resetExecutionUI('immediate'); }
                 },
-                error: function () {
-                    showMessage('請求失敗', 'error');
-                    resetExecutionUI('immediate');
-                }
+                error: function () { showMessage('請求失敗', 'error'); resetExecutionUI('immediate'); }
             });
         });
 
-        // 自動掛號表單提交
+        // 日期範圍掛號
         $('#autoForm').on('submit', function (e) {
             e.preventDefault();
-
-            const weekdays = getSelectedWeekdays();
-            const startDate = $('#startDate').val();
-            const endDate = $('#endDate').val();
-
-            if (weekdays.length === 0) {
-                showMessage('請選擇至少一個星期', 'error');
-                return;
-            }
-
-            if (!startDate || !endDate) {
-                showMessage('請選擇開始和結束日期', 'error');
-                return;
-            }
-
-            if (startDate > endDate) {
-                showMessage('開始日期不能晚於結束日期', 'error');
-                return;
-            }
-
-            // 顯示執行狀態區塊
-            const weekdayNames = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' };
-            const selectedDays = weekdays.map(w => '星期' + weekdayNames[w]).join('、');
-            showExecutionStatus('自動掛號', `正在掛號 ${selectedDays}，日期範圍: ${startDate} 到 ${endDate}`);
-
+            const weekdays = getRangeWeekdays();
+            const startDate = $('#rangeStartDate').val();
+            const endDate = $('#rangeEndDate').val();
+            if (weekdays.length === 0) { showMessage('請選擇至少一個星期', 'error'); return; }
+            if (!startDate || !endDate) { showMessage('請選擇開始和結束日期', 'error'); return; }
+            if (startDate > endDate) { showMessage('開始日期不能晚於結束日期', 'error'); return; }
+            const weekdayNames = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六' };
+            showExecutionStatus('日期範圍掛號', `星期${weekdays.map(w => weekdayNames[w]).join('、')}，${startDate} 到 ${endDate}`);
             $.ajax({
                 url: '/api/register/auto',
                 method: 'POST',
                 contentType: 'application/json',
-                data: JSON.stringify({
-                    weekdays: weekdays,
-                    start_date: startDate,
-                    end_date: endDate
-                }),
-                success: function (response) {
-                    if (response.success) {
-                        showMessage(response.message, 'success');
-                        // 開始輪詢進度
-                        startProgressPolling('auto');
-                    } else {
-                        showMessage(response.message, 'error');
-                        resetExecutionUI('auto');
-                    }
+                data: JSON.stringify({ weekdays, start_date: startDate, end_date: endDate }),
+                success: function (r) {
+                    if (r.success) { showMessage(r.message, 'success'); startProgressPolling('auto'); }
+                    else { showMessage(r.message, 'error'); }
                 },
-                error: function () {
-                    showMessage('請求失敗', 'error');
-                    resetExecutionUI('auto');
-                }
+                error: function () { showMessage('請求失敗', 'error'); }
             });
         });
 
-        // 啟動排程
-        $('#startSchedule').on('click', function () {
-            // 檢查是否已啟用定時排程
-            if (!$('#scheduleEnabled').is(':checked')) {
-                // 自動啟用排程功能
-                $('#scheduleEnabled').prop('checked', true).trigger('change');
-
-                // 等待一下讓開關儲存完成，然後啟動排程
-                setTimeout(function () {
-                    startScheduleProcess();
-                }, 500);
-            } else {
-                startScheduleProcess();
-            }
-        });
-
-        function startScheduleProcess() {
-            $.ajax({
-                url: '/api/schedule/start',
-                method: 'POST',
-                success: function (response) {
-                    if (response.success) {
-                        showMessage('🚀 ' + response.message, 'success', false); // 不自動隱藏
-                        loadScheduleStatus();
-                    } else {
-                        showMessage(response.message, 'error');
-                    }
-                }
-            });
-        }
-
-        // 停止排程
-        $('#stopSchedule').on('click', function () {
-            $.ajax({
-                url: '/api/schedule/stop',
-                method: 'POST',
-                success: function (response) {
-                    if (response.success) {
-                        showMessage('⏹️ ' + response.message, 'success', false); // 不自動隱藏
-                        loadScheduleStatus();
-                    } else {
-                        showMessage(response.message, 'error');
-                    }
-                }
-            });
-        });
-
-        // 儲存排程設定按鈕
+        // 儲存排程設定
         $('#saveScheduleSettings').on('click', function () {
-            const data = {
-                schedule: {
-                    enabled: $('#scheduleEnabled').is(':checked'),
-                    target_weekdays: getSelectedWeekdays(),
-                    check_time: $('#checkTime').val(),
-                    start_date: $('#startDate').val(),
-                    end_date: $('#endDate').val()
-                }
-            };
-
-            console.log('儲存排程設定:', data);
-
+            const weekdays = getSchWeekdays();
+            if (weekdays.length === 0) { showMessage('請至少選擇一個星期', 'error'); return; }
             $.ajax({
                 url: '/api/config/schedule',
                 method: 'POST',
                 contentType: 'application/json',
-                data: JSON.stringify(data),
-                success: function (response) {
-                    console.log('儲存排程設定回應:', response);
-                    if (response.success) {
-                        showMessage('排程設定已儲存', 'success');
-                        loadScheduleStatus(); // 重新載入狀態
-                    } else {
-                        showMessage(response.message, 'error');
+                data: JSON.stringify({
+                    schedule: {
+                        enabled: $('#scheduleEnabled').is(':checked'),
+                        target_weekdays: weekdays,
+                        check_time: $('#checkTime').val(),
+                        start_date: $('#schStartDate').val(),
+                        end_date: $('#schEndDate').val()
                     }
+                }),
+                success: function (r) {
+                    if (r.success) { showMessage('排程設定已儲存', 'success'); loadScheduleStatus(); }
+                    else { showMessage(r.message, 'error'); }
                 },
-                error: function (xhr, status, error) {
-                    console.error('儲存排程設定失敗:', error);
-                    showMessage('儲存失敗: ' + error, 'error');
-                }
+                error: function () { showMessage('儲存失敗', 'error'); }
             });
         });
     });
@@ -712,6 +710,79 @@
                     .addClass('alert-danger');
             }
         });
+    }
+
+    function fetchDoctorSchedule() {
+        const weekdayNames = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' };
+        $('#schedulePlaceholder').hide();
+        $('#scheduleResult').hide();
+        $('#scheduleLoading').show();
+        $('#fetchScheduleBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> 查詢中...');
+
+        $.ajax({
+            url: '/api/doctor/schedule',
+            method: 'GET',
+            timeout: 70000,
+            success: function (response) {
+                $('#scheduleLoading').hide();
+                $('#fetchScheduleBtn').prop('disabled', false).html('<i class="fas fa-sync-alt"></i> 查詢最新時段');
+
+                if (!response.success) {
+                    showMessage(response.message || '查詢失敗', 'error');
+                    $('#schedulePlaceholder').show();
+                    return;
+                }
+
+                const data = response.data || [];
+                const available = data.filter(r => r.status === 'available');
+                const full = data.filter(r => r.status === 'full');
+
+                $('#availableCount').text(available.length);
+                $('#fullCount').text(full.length);
+                $('#fetchTime').text('更新時間: ' + new Date().toLocaleTimeString('zh-TW'));
+
+                const tbody = $('#scheduleTableBody');
+                tbody.empty();
+
+                if (data.length === 0) {
+                    tbody.append('<tr><td colspan="5" class="text-center text-muted">目前沒有查詢到任何門診時段</td></tr>');
+                } else {
+                    data.forEach(function (row) {
+                        const isAvailable = row.status === 'available';
+                        const statusBadge = isAvailable
+                            ? '<span class="badge bg-success"><i class="fas fa-check-circle"></i> 可預約</span>'
+                            : '<span class="badge bg-danger"><i class="fas fa-times-circle"></i> 額滿</span>';
+                        const daysText = row.days_from_today === 0 ? '今天' : row.days_from_today === 1 ? '明天' : `${row.days_from_today} 天後`;
+                        const actionBtn = isAvailable
+                            ? `<button class="btn btn-xs btn-outline-success py-0 px-2" onclick="quickRegister('${row.date}')"><i class="fas fa-calendar-plus"></i> 立即掛號</button>`
+                            : '<span class="text-muted small">—</span>';
+                        tbody.append(`
+                            <tr class="${isAvailable ? '' : 'full-row'}">
+                                <td><strong>${row.date}</strong></td>
+                                <td>星期${weekdayNames[row.weekday] || row.weekday}</td>
+                                <td><small class="${isAvailable ? 'text-muted' : ''}">${daysText}</small></td>
+                                <td>${statusBadge}</td>
+                                <td>${actionBtn}</td>
+                            </tr>
+                        `);
+                    });
+                }
+
+                $('#scheduleResult').show();
+            },
+            error: function () {
+                $('#scheduleLoading').hide();
+                $('#fetchScheduleBtn').prop('disabled', false).html('<i class="fas fa-sync-alt"></i> 查詢最新時段');
+                $('#schedulePlaceholder').show();
+                showMessage('查詢逾時或連線失敗，請稍後再試', 'error');
+            }
+        });
+    }
+
+    function quickRegister(date) {
+        $('#targetDate').val(date);
+        $('html, body').animate({ scrollTop: $('#immediateForm').offset().top - 100 }, 400);
+        showMessage(`已帶入日期 ${date}，請確認後點擊「立即掛號」`, 'info');
     }
 
     function checkDeploymentMode() {
