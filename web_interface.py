@@ -264,6 +264,77 @@ def immediate_register():
         return jsonify({'success': False, 'message': str(e)})
 
 
+@app.route('/api/doctor/sections', methods=['GET'])
+@login_required
+def get_sections():
+    """抓取所有科別清單"""
+    try:
+        def run_fetch():
+            try:
+                result = asyncio.run(auto_register.fetch_sections())
+                progress_status['_sections_result'] = result
+            except Exception as e:
+                logger.error(f"抓取科別失敗: {e}")
+                progress_status['_sections_result'] = []
+            finally:
+                progress_status['_sections_fetching'] = False
+
+        progress_status['_sections_fetching'] = True
+        progress_status['_sections_result'] = None
+        t = threading.Thread(target=run_fetch, daemon=True)
+        t.start()
+        t.join(timeout=30)
+        return jsonify({'success': True, 'data': progress_status.get('_sections_result', [])})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/doctor/list', methods=['GET'])
+@login_required
+def get_doctors():
+    """抓取指定科別的醫師清單"""
+    section_code = request.args.get('section', '')
+    if not section_code:
+        return jsonify({'success': False, 'message': '請提供科別代碼'})
+    try:
+        def run_fetch():
+            try:
+                result = asyncio.run(auto_register.fetch_doctors_by_section(section_code))
+                progress_status['_doctors_result'] = result
+            except Exception as e:
+                logger.error(f"抓取醫師清單失敗: {e}")
+                progress_status['_doctors_result'] = []
+            finally:
+                progress_status['_doctors_fetching'] = False
+
+        progress_status['_doctors_fetching'] = True
+        progress_status['_doctors_result'] = None
+        t = threading.Thread(target=run_fetch, daemon=True)
+        t.start()
+        t.join(timeout=30)
+        return jsonify({'success': True, 'data': progress_status.get('_doctors_result', [])})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/config/doctor', methods=['POST'])
+@login_required
+def save_doctor_config():
+    """儲存醫師資訊設定"""
+    try:
+        data = request.json
+        doctor_info = data.get('doctor_info', {})
+        required = ['section', 'section_name', 'doctor_no', 'doctor_name']
+        for f in required:
+            if not doctor_info.get(f):
+                return jsonify({'success': False, 'message': f'請填寫 {f}'})
+        auto_register.config['doctor_info'].update(doctor_info)
+        auto_register.save_config(auto_register.config)
+        return jsonify({'success': True, 'message': '醫師資訊已儲存'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+
 @app.route('/api/doctor/schedule', methods=['GET'])
 @login_required
 def get_doctor_schedule():

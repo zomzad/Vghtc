@@ -30,9 +30,25 @@
 }
 #scheduleTable tbody tr:nth-child(odd) td {
     background-color: #ffffff !important;
+    color: #333;
 }
 #scheduleTable tbody tr:nth-child(even) td {
     background-color: #f3f3f3 !important;
+    color: #333;
+}
+[data-theme="dark"] #scheduleTable tbody tr:nth-child(odd) td {
+    background-color: #2d2d2d !important;
+    color: #e0e0e0;
+}
+[data-theme="dark"] #scheduleTable tbody tr:nth-child(even) td {
+    background-color: #333333 !important;
+    color: #e0e0e0;
+}
+[data-theme="dark"] #scheduleTable thead tr {
+    background-color: #3a3a3a !important;
+}
+[data-theme="dark"] #scheduleTable thead th {
+    color: #e0e0e0 !important;
 }
 #scheduleTable {
     border-radius: 10px;
@@ -127,23 +143,40 @@
                 <i class="fas fa-user-md"></i> 醫師資訊
             </div>
             <div class="card-body">
-                <div class="row">
-                    <div class="col-6">
-                        <strong>科別:</strong><br>
-                        <span class="text-primary">{{ config.doctor_info.section_name }}</span>
+                <form id="doctorForm">
+                    <div class="mb-3">
+                        <label class="form-label">科別</label>
+                        <div class="input-group">
+                            <select class="form-select" id="sectionSelect" onchange="loadDoctors()">
+                                <option value="{{ config.doctor_info.section }}" data-name="{{ config.doctor_info.section_name }}">
+                                    {{ config.doctor_info.section_name }}
+                                </option>
+                            </select>
+                            <button class="btn btn-outline-secondary" type="button" onclick="loadSections()" id="loadSectionsBtn">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                        <div id="sectionsLoading" class="text-muted small mt-1" style="display:none;">
+                            <i class="fas fa-spinner fa-spin"></i> 載入科別中...
+                        </div>
                     </div>
-                    <div class="col-6">
-                        <strong>醫師:</strong><br>
-                        <span class="text-primary">{{ config.doctor_info.doctor_name }}</span>
+                    <div class="mb-3">
+                        <label class="form-label">醫師</label>
+                        <div class="input-group">
+                            <select class="form-select" id="doctorSelect">
+                                <option value="{{ config.doctor_info.doctor_no }}" data-name="{{ config.doctor_info.doctor_name }}">
+                                    {{ config.doctor_info.doctor_name }}
+                                </option>
+                            </select>
+                        </div>
+                        <div id="doctorsLoading" class="text-muted small mt-1" style="display:none;">
+                            <i class="fas fa-spinner fa-spin"></i> 載入醫師中...
+                        </div>
                     </div>
-                </div>
-                <hr>
-                <div>
-                    <strong>門診時間:</strong><br>
-                    <span class="badge bg-info me-1">星期二上午</span>
-                    <span class="badge bg-info me-1">星期三上午</span>
-                    <span class="badge bg-info">星期五上午</span>
-                </div>
+                    <button type="button" class="btn btn-primary w-100" onclick="saveDoctorConfig()">
+                        <i class="fas fa-save"></i> 儲存醫師設定
+                    </button>
+                </form>
                 <hr>
                 <div>
                     <strong>部署模式:</strong><br>
@@ -298,12 +331,12 @@
     </div>
 </div>
 
-<!-- 定時排程設定 -->
+<!-- 定時排程掛號 -->
 <div class="row">
     <div class="col-12">
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="fas fa-clock"></i> 定時排程設定</span>
+                <span><i class="fas fa-clock"></i> 定時排程掛號</span>
                 <div class="form-check form-switch mb-0">
                     <input class="form-check-input" type="checkbox" id="scheduleEnabled" {% if config.schedule.enabled %}checked{% endif %}>
                     <label class="form-check-label" for="scheduleEnabled">啟用排程</label>
@@ -709,6 +742,88 @@
                 $('#scheduleStatus').removeClass('alert-info alert-success alert-warning')
                     .addClass('alert-danger');
             }
+        });
+    }
+
+    function loadSections() {
+        $('#loadSectionsBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+        $('#sectionsLoading').show();
+        $.ajax({
+            url: '/api/doctor/sections',
+            method: 'GET',
+            timeout: 35000,
+            success: function (res) {
+                $('#sectionsLoading').hide();
+                $('#loadSectionsBtn').prop('disabled', false).html('<i class="fas fa-sync-alt"></i>');
+                if (!res.success || !res.data.length) {
+                    showMessage('載入科別失敗', 'error');
+                    return;
+                }
+                const sel = $('#sectionSelect');
+                const current = sel.val();
+                sel.empty();
+                res.data.forEach(function (s) {
+                    sel.append(`<option value="${s.code}" data-name="${s.name}">${s.name}</option>`);
+                });
+                if (current) sel.val(current);
+                loadDoctors();
+            },
+            error: function () {
+                $('#sectionsLoading').hide();
+                $('#loadSectionsBtn').prop('disabled', false).html('<i class="fas fa-sync-alt"></i>');
+                showMessage('載入科別逾時', 'error');
+            }
+        });
+    }
+
+    function loadDoctors() {
+        const sectionCode = $('#sectionSelect').val();
+        if (!sectionCode) return;
+        $('#doctorsLoading').show();
+        $.ajax({
+            url: '/api/doctor/list?section=' + sectionCode,
+            method: 'GET',
+            timeout: 35000,
+            success: function (res) {
+                $('#doctorsLoading').hide();
+                if (!res.success || !res.data.length) {
+                    showMessage('載入醫師清單失敗', 'error');
+                    return;
+                }
+                const sel = $('#doctorSelect');
+                sel.empty();
+                res.data.forEach(function (d) {
+                    sel.append(`<option value="${d.code}" data-name="${d.name}">${d.name}</option>`);
+                });
+            },
+            error: function () {
+                $('#doctorsLoading').hide();
+                showMessage('載入醫師清單逾時', 'error');
+            }
+        });
+    }
+
+    function saveDoctorConfig() {
+        const sectionSel = $('#sectionSelect');
+        const doctorSel = $('#doctorSelect');
+        const sectionCode = sectionSel.val();
+        const sectionName = sectionSel.find('option:selected').data('name') || sectionSel.find('option:selected').text();
+        const doctorNo = doctorSel.val();
+        const doctorName = doctorSel.find('option:selected').data('name') || doctorSel.find('option:selected').text();
+
+        if (!sectionCode || !doctorNo) {
+            showMessage('請先選擇科別與醫師', 'error');
+            return;
+        }
+        $.ajax({
+            url: '/api/config/doctor',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ doctor_info: { section: sectionCode, section_name: sectionName, doctor_no: doctorNo, doctor_name: doctorName } }),
+            success: function (res) {
+                showMessage(res.message, res.success ? 'success' : 'error');
+            },
+            error: function () { showMessage('儲存失敗', 'error'); }
         });
     }
 

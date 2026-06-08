@@ -368,26 +368,27 @@ class VGHTCAutoRegister:
                 '驗證碼錯誤', '資料錯誤'
             ]
             
+            # 若還停留在表單頁，代表驗證碼未通過或表單被退回
+            if 'registerPrompt.jsp' in current_url:
+                logger.warning(f"掛號失敗: 仍在表單頁 ({current_url})，可能是 reCAPTCHA 未通過")
+                return False
+
             # 檢查失敗關鍵字
             for keyword in failure_keywords:
                 if keyword in page_text:
                     logger.warning(f"掛號失敗 - 發現失敗關鍵字: {keyword}")
                     return False
-            
+
             # 檢查成功關鍵字
             for keyword in success_keywords:
                 if keyword in page_text:
                     logger.info(f"掛號成功: {appointment['date']} - 發現成功關鍵字: {keyword}")
                     return True
-            
-            # 如果沒有明確的失敗訊息，且表單已提交，通常表示成功
-            if 'registerPrompt.jsp' not in current_url:
-                logger.info(f"掛號成功: {appointment['date']} - 頁面已跳轉，未發現失敗訊息")
-                return True
-            else:
-                # 即使還在同一頁面，如果沒有失敗訊息也可能是成功
-                logger.info(f"掛號可能成功: {appointment['date']} - 未發現明確失敗訊息，建議手動確認")
-                return True  # 改為預設成功，因為實際測試確認是成功的
+
+            # 頁面已跳轉且無明確失敗訊息，記錄頁面文字供人工確認
+            logger.warning(f"掛號結果不明: 頁面已跳轉至 {current_url}，但未找到成功/失敗關鍵字")
+            logger.warning(f"頁面文字前300字: {page_text[:300]}")
+            return False
 
         except Exception as e:
             logger.error(f"掛號失敗: {e}")
@@ -446,21 +447,40 @@ class VGHTCAutoRegister:
             # fallback: 本地環境等待手動處理
             is_cloud = os.getenv('CLOUD_DEPLOYMENT', 'false').lower() == 'true'
             if not is_cloud:
-                logger.info("CapSolver 失敗，等待手動完成 reCAPTCHA 驗證 (60秒)...")
-                await self.page.wait_for_timeout(60000)
+                self.update_progress(
+                    "等待手動驗證", 60,
+                    "⚠️ CapSolver 失敗，請查看已開啟的瀏覽器視窗，手動勾選「我不是機器人」，完成後系統將自動繼續（最多等待 3 分鐘）"
+                )
+                logger.info("CapSolver 失敗，等待手動完成 reCAPTCHA 驗證（最多 180 秒）...")
+
+                # 每 5 秒檢查一次，最多等 180 秒
+                for _ in range(36):
+                    await self.page.wait_for_timeout(5000)
+                    token_value = await self.page.evaluate("""
+                        (function() {
+                            var el = document.getElementById('g-recaptcha-response');
+                            return el ? el.value || el.innerHTML : '';
+                        })()
+                    """)
+                    if token_value and len(token_value) > 20:
+                        logger.info("偵測到手動完成 reCAPTCHA，繼續執行...")
+                        self.update_progress("驗證完成", 70, "reCAPTCHA 手動完成，繼續掛號...")
+                        return
+                raise Exception("reCAPTCHA 未完成（等待 3 分鐘後仍未偵測到驗證結果）")
+            else:
+                raise Exception("reCAPTCHA CapSolver 解題失敗，無法繼續掛號")
 
         except Exception as e:
-            logger.warning(f"reCAPTCHA 處理過程發生錯誤: {e}")
+            logger.error(f"reCAPTCHA 處理失敗: {e}")
+            raise
 
     async def solve_recaptcha_with_capsolver(self) -> bool:
-        """使用 CapSolver ML 服務解決 reCAPTCHA v2"""
+        """使用 CapSolver REST API 解決 reCAPTCHA v2"""
         try:
             api_key = self.config.get('capsolver_api_key', '')
             if not api_key:
                 logger.warning("未設定 capsolver_api_key")
                 return False
-
-            capsolver.api_key = api_key
 
             # 取得 site key
             site_key = await self.page.get_attribute('[data-sitekey]', 'data-sitekey')
@@ -469,16 +489,64 @@ class VGHTCAutoRegister:
             current_url = self.page.url
 
             logger.info(f"送出 CapSolver 任務 (site_key: {site_key[:20]}...)")
-            solution = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: capsolver.solve({
-                    "type": "ReCaptchaV2TaskProxyless",
-                    "websiteURL": current_url,
-                    "websiteKey": site_key,
-                })
-            )
 
-            token = solution.get("gRecaptchaResponse")
+            # 透過瀏覽器的 fetch 呼叫 CapSolver API（繞過 Python requests 防火牆限制）
+            logger.info("透過瀏覽器呼叫 CapSolver API...")
+            create_result = await self.page.evaluate("""
+                async ([apiKey, siteKey, pageUrl]) => {
+                    const resp = await fetch('https://api.capsolver.com/createTask', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            clientKey: apiKey,
+                            task: {
+                                type: 'ReCaptchaV2TaskProxyLess',
+                                websiteURL: pageUrl,
+                                websiteKey: siteKey
+                            }
+                        })
+                    });
+                    return await resp.json();
+                }
+            """, [api_key, site_key, current_url])
+
+            logger.info(f"CapSolver createTask 回應: {create_result}")
+            if create_result.get('errorId', 1) != 0:
+                raise Exception(f"CapSolver createTask 失敗: {create_result.get('errorDescription', '未知錯誤')}")
+
+            task_id = create_result.get('taskId')
+            if not task_id:
+                raise Exception("CapSolver 未回傳 taskId")
+
+            logger.info(f"CapSolver taskId: {task_id}，等待解題...")
+
+            # 輪詢解題結果（最多 120 秒）
+            token = None
+            for attempt in range(24):
+                await asyncio.sleep(5)
+                result_data = await self.page.evaluate("""
+                    async ([apiKey, taskId]) => {
+                        const resp = await fetch('https://api.capsolver.com/getTaskResult', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({clientKey: apiKey, taskId: taskId})
+                        });
+                        return await resp.json();
+                    }
+                """, [api_key, task_id])
+
+                status = result_data.get('status')
+                logger.info(f"CapSolver 狀態 ({attempt+1}/24): {status}")
+
+                if status == 'ready':
+                    token = result_data.get('solution', {}).get('gRecaptchaResponse')
+                    break
+                elif status == 'failed' or result_data.get('errorId', 0) != 0:
+                    raise Exception(f"CapSolver 解題失敗: {result_data.get('errorDescription', '未知錯誤')}")
+
+            if not token:
+                raise Exception("CapSolver 解題超時（120秒）")
+
             if not token:
                 logger.error("CapSolver 未回傳 token")
                 return False
@@ -518,9 +586,21 @@ class VGHTCAutoRegister:
                     }} catch(e) {{}}
                 }})();
             """)
-            await self.page.wait_for_timeout(1000)
-            logger.info("CapSolver token 注入並觸發 callback 成功")
-            return True
+            await self.page.wait_for_timeout(2000)
+
+            # 驗證 token 是否成功注入（g-recaptcha-response 有值）
+            token_value = await self.page.evaluate("""
+                (function() {
+                    var el = document.getElementById('g-recaptcha-response');
+                    return el ? el.value || el.innerHTML : '';
+                })()
+            """)
+            if token_value and len(token_value) > 20:
+                logger.info(f"CapSolver token 注入成功，token 長度: {len(token_value)}")
+                return True
+            else:
+                logger.error(f"CapSolver token 注入後驗證失敗，token 為空或太短: '{str(token_value)[:50]}'")
+                return False
 
         except Exception as e:
             logger.error(f"CapSolver 解題失敗: {e}")
@@ -697,6 +777,71 @@ class VGHTCAutoRegister:
         finally:
             await self.close_browser()
 
+    async def fetch_sections(self) -> List[Dict]:
+        """抓取所有科別清單"""
+        import re
+        try:
+            await self.init_browser(headless=True)
+            await self.page.goto('https://register.vghtc.gov.tw/register/listSection.jsp')
+            await self.page.wait_for_load_state('networkidle')
+
+            links = await self.page.query_selector_all('a[href*="section="]')
+            sections = []
+            for link in links:
+                href = await link.get_attribute('href')
+                name = (await link.text_content() or '').strip()
+                match = re.search(r'section=([A-Z0-9]+)', href or '')
+                if match and name:
+                    sections.append({'code': match.group(1), 'name': name})
+            logger.info(f"取得科別清單: {len(sections)} 個")
+            return sections
+        finally:
+            await self.close_browser()
+
+    async def fetch_doctors_by_section(self, section_code: str) -> List[Dict]:
+        """抓取指定科別的醫師清單"""
+        import re
+        try:
+            await self.init_browser(headless=True)
+            await self.page.goto('https://register.vghtc.gov.tw/register/listSection.jsp')
+            await self.page.wait_for_load_state('networkidle')
+            await self.page.click(f'a[href*="section={section_code}"]')
+            await self.page.wait_for_load_state('networkidle')
+
+            # 醫師元素以醫師代碼為 id，元素類型不固定，查所有帶 id 的元素
+            all_with_id = await self.page.query_selector_all('[id]')
+            doctors = []
+            debug_ids = []
+            for el in all_with_id:
+                el_id = (await el.get_attribute('id') or '').strip()
+                if not el_id:
+                    continue
+                debug_ids.append(el_id)
+                # 醫師代碼格式：4~8 位，由數字和大寫英文組成，且包含至少一個數字
+                if re.match(r'^[0-9A-Z]{4,8}$', el_id) and re.search(r'[0-9]', el_id) and re.search(r'[A-Z]', el_id):
+                    name = (await el.text_content() or '').strip()
+                    if not name:
+                        # 嘗試從父元素取名稱
+                        parent = await el.query_selector('xpath=..')
+                        if parent:
+                            name = (await parent.text_content() or '').strip()
+                    name = name.split('\n')[0].strip()
+                    if name:
+                        doctors.append({'code': el_id, 'name': name})
+
+            # 依 code 去重，保留第一筆
+            seen = set()
+            unique_doctors = []
+            for d in doctors:
+                if d['code'] not in seen:
+                    seen.add(d['code'])
+                    unique_doctors.append(d)
+
+            logger.info(f"取得 {section_code} 科醫師清單: {len(unique_doctors)} 位（去重前 {len(doctors)} 筆）")
+            return unique_doctors
+        finally:
+            await self.close_browser()
+
     async def auto_register_by_date_range(self, target_weekdays: List[int], start_date: str = None, end_date: str = None):
         """在指定日期範圍內自動掛號"""
         try:
@@ -709,7 +854,7 @@ class VGHTCAutoRegister:
             self.update_progress("環境檢查", 10, f"執行環境: {'雲端模式 (headless)' if is_cloud else '本地模式'}")
             
             self.update_progress("啟動瀏覽器", 15, "正在啟動瀏覽器...")
-            await self.init_browser(headless=is_cloud, use_display=not is_cloud)
+            await self.init_browser(headless=True)
             self.update_progress("瀏覽器就緒", 25, "瀏覽器啟動成功")
 
             self.update_progress("導航", 30, "正在導航到醫師門診時間表...")
@@ -793,7 +938,7 @@ class VGHTCAutoRegister:
             self.update_progress("環境檢查", 10, f"執行環境: {'雲端模式 (headless)' if is_cloud else '本地模式'}")
             
             self.update_progress("啟動瀏覽器", 15, "正在啟動瀏覽器...")
-            await self.init_browser(headless=is_cloud, use_display=not is_cloud)
+            await self.init_browser(headless=True)
             self.update_progress("瀏覽器就緒", 25, "瀏覽器啟動成功")
 
             self.update_progress("導航", 30, "正在導航到醫師門診時間表...")
